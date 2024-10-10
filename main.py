@@ -1,6 +1,5 @@
-import warnings
-
-warnings.filterwarnings("error")
+PLOT_3D = False
+#import warnings; warnings.filterwarnings("error"); PLOT_3D = True
 
 import math
 import matplotlib.pyplot as plt
@@ -34,23 +33,22 @@ def main():
     f, g = None, None
 
     f = np.random.rand(K**D, C)  # X->Y or line->square
+    #g = np.random.rand(K, K)  # Y->X or square->line
+
     Y = np.array(np.meshgrid(*(D*(range(K),)))).T.reshape(-1, D)
+    X = np.arange(K**C)
 
-    g = np.random.rand(K, K)  # Y->X or square->line
-
-    #print(f); print(Y)
+    Y_EXP = np.expand_dims(Y, axis=1)
 
     start_time = time.time()
     lr = LR
-    summarize(start_time, -1, Y, f, g)
+    #summarize(start_time, -1, Y, f, g)
     try:
         if g is None:
             for i in range(ITERATIONS):
                 df = np.zeros_like(f)
-                for y in Y:
-                    nf_y = best_match_f(f, y)
-                    for x in range(K**C):  # Assumes map is on a line
-                        df[x] += df_x(lr, i, y, nf_y, f, x)
+                nf_Y = best_match_f(f, Y_EXP)
+                df = df_X(lr, i, Y, nf_Y, f, X)
                 print("f(x):  {:3d}, {:.3f} : {:.3f} +- ({:.6f} +- {:.6f})".format(i+1, lr, np.mean(np.abs(f)), np.mean(np.abs(df)), np.std(np.abs(df))))
                 f += df
                 lr *= LR_DECAY
@@ -75,7 +73,7 @@ def main():
                 for y in Y:
                     g_y = g[tuple(y)]
                     for x in range(K**C):
-                        df[x] += df_x(lr, i, y, g_y*(K**D-1), f, x)
+                        df[x] += df_X(lr, i, y, g_y*(K**D-1), f, x)
                         dg[tuple(y)] += dg_y(lr, i, x, g, y, f[x]*(K-1))
                 print("f(x):  {:3d}, {:.3f} : {:.3f} +- ({:.6f} +- {:.6f})".format(i+1, lr, np.mean(np.abs(f)), np.mean(np.abs(df)), np.std(np.abs(df))))
                 print("g(y):  {:3d}, {:.3f} : {:.3f} +- ({:.6f} +- {:.6f})".format(i+1, lr, np.mean(np.abs(g)), np.mean(np.abs(dg)), np.std(np.abs(dg))))
@@ -95,9 +93,9 @@ def summarize(start_time, i, Y, f, g):
     print(f"Training done in {end_time - start_time:0.3f} seconds")
     plot(i, Y, f, g)
 
-def best_match_f(f, y):
-    y = y/(K-1)  # map from [[0, K-1], [0, K-1]] to [[0, 1], [0, 1]]
-    return np.argmin(np.sum((f-y)**2, axis=1))
+def best_match_f(f, Y):
+    Y = Y/(K-1)  # map from [[0, K-1], [0, K-1]] to [[0, 1], [0, 1]]
+    return np.argmin(np.sum((f-Y)**2, axis=2), axis=1)
 
 def best_match_g(g, x):
     x = x/(K**D-1)  # map from [0, K**D-1] to [0, 1]
@@ -109,7 +107,7 @@ def anneal(i):
 
 def A(i, x, x_):
     sigma_A = SIGMA_A*anneal(i)
-    return math.exp(-np.sum((x - x_)**2)/(2*sigma_A**2))
+    return np.exp(-(x - x_)**2/(2*sigma_A**2))
 
 def NN(y, y0):
     if y[0] == y0[0] and y[1] == y0[1]:
@@ -123,17 +121,18 @@ def NN(y, y0):
 def B(i, y, y_):
     #return 1  # Normal Kohonen
     sigma_B = SIGMA_B*anneal(i)
-    return math.exp(-np.sum((y - y_)**2)/(2*sigma_B**2))
+    return np.exp(-np.sum((y - y_)**2, axis=-1)/(2*sigma_B**2))
 
-def df_x(lr, i, y, nf_y, f, x):
-    f_x = f[x]
-    y = y/(K-1)
+def df_X(lr, i, Y, nf_Y, f, X):
+    Y = Y/(K-1)
 
-    x = x/(K**D-1)
-    nf_y = nf_y/(K**D-1)
+    X = X/(K**D-1)
+    nf_Y = nf_Y/(K**D-1)
 
-    Bp = (y - f_x)*B(i, y, f_x)
-    return lr * A(i, x, nf_y) * Bp
+    A_ = A(i, X, nf_Y[:, np.newaxis])  # A_[i, j] == A(X, nf_Y[i])[j]
+    Bp = (Y[:, np.newaxis] - f)*B(i, Y[:, np.newaxis], f)[:, :, np.newaxis]  # Bp[i, j] == (Y[i] - f[j])*B(Y[i], f[j])
+    df_X_Y = A_[:, :, np.newaxis]*Bp
+    return lr * np.sum(df_X_Y, axis=0)
 
 def dg_y(lr, i, x, g, y, ng_x):
     g_y = g[tuple(y)]
@@ -147,33 +146,37 @@ def dg_y(lr, i, x, g, y, ng_x):
     return dg_y_
 
 def plot(i, Y, f, g):
+    Y_EXP = np.expand_dims(Y, axis=1)
     rows = 1 if f is None or g is None else 2
+    cols = 2 if PLOT_3D else 1
     fig = plt.figure(figsize=plt.figaspect(.5))
     fig.suptitle(f"{K=} {SEED=} {SIGMA_A=} {SIGMA_B=}\n{ANNEAL_N=} {ANNEAL_D=} {LR=} {LR_DECAY=} iterations={i+1}")
     if f is not None:
-        ax = fig.add_subplot(rows, 2, 1, projection="3d")
-        ax.set_xlabel("$x$")
-        ax.set_ylabel("$y_0$")
-        ax.set_zlabel("$y_1$")
-        for x, fx in enumerate(f):
-            ax.plot([x, x], [0, fx[0]*(K-1)], [0, fx[1]*(K-1)], "b-")
-        ax = fig.add_subplot(rows, 2, 2)
+        if PLOT_3D:
+            ax = fig.add_subplot(rows, cols, 1, projection="3d")
+            ax.set_xlabel("$x$")
+            ax.set_ylabel("$y_0$")
+            ax.set_zlabel("$y_1$")
+            for x, fx in enumerate(f):
+                ax.plot([x, x], [0, fx[0]*(K-1)], [0, fx[1]*(K-1)], "b-")
+        ax = fig.add_subplot(rows, cols, 2 if PLOT_3D else 1)
         #ax.set_aspect("equal")
         ax.set_xlabel("$y_0$")
         ax.set_ylabel("$y_1$")
         ax.grid()
-        path = Y[np.argsort(np.fromiter((best_match_f(f, y) for y in Y), dtype=float))]
+        path = Y[np.argsort(best_match_f(f, Y_EXP))]
         path = path[:,0], path[:,1]
         ax.plot(*path, ".r-")
         ax.scatter(f[:,0]*(K-1), f[:,1]*(K-1), c="b", marker="o")
     if g is not None:
-        ax = fig.add_subplot(rows, 2, 3 if rows == 2 else 1, projection="3d")
-        ax.set_xlabel("$y_0$")
-        ax.set_ylabel("$y_1$")
-        ax.set_zlabel("$x$")
-        X_, Y_ = np.arange(K), np.arange(K)
-        X_, Y_ = np.meshgrid(X_, Y_)
-        ax.plot_surface(X_, Y_, g, cmap=cm.coolwarm)
+        if PLOT_3D:
+            ax = fig.add_subplot(rows, cols, 3 if rows == 2 and cols == 2 else 1, projection="3d")
+            ax.set_xlabel("$y_0$")
+            ax.set_ylabel("$y_1$")
+            ax.set_zlabel("$x$")
+            X_, Y_ = np.arange(K), np.arange(K)
+            X_, Y_ = np.meshgrid(X_, Y_)
+            ax.plot_surface(X_, Y_, g, cmap=cm.coolwarm)
         ax = fig.add_subplot(rows, 2, 4 if rows == 2 else 2)
         ax.set_xlabel("$y_0$")
         ax.set_ylabel("$y_1$")
