@@ -49,8 +49,8 @@ def main():
     start_time = time.time()
     lr = LR
     nnd_f, nnd_g = [], []
-    nn_distance_stats(nnd_f, f)
-    nn_distance_stats(nnd_g, g)
+    #nn_distance_stats(nnd_f, f)
+    #nn_distance_stats(nnd_g, g)
     summarize(start_time, -1, Y, f, g, nnd_f, nnd_g)
     try:
         if g is None:
@@ -61,7 +61,7 @@ def main():
                 f += df
                 lr *= LR_DECAY
                 if (i+1)%PLOT_ITERATIONS == 0:
-                    summarize(start_time, i, Y, f, g)
+                    summarize(start_time, i, Y, f, g, nnd_f, nnd_g)
         elif f is None:
             for i in range(ITERATIONS):
                 ng_X = best_match_g(g, X)
@@ -70,7 +70,7 @@ def main():
                 g += dg
                 lr *= LR_DECAY
                 if (i+1)%PLOT_ITERATIONS == 0:
-                    summarize(start_time, i, Y, f, g)
+                    summarize(start_time, i, Y, f, g, nnd_f, nnd_g)
         else:
             for i in range(ITERATIONS):
                 df = df_X(lr, i, Y, g*(K**D-1), f, X)
@@ -81,11 +81,11 @@ def main():
                 g += dg
                 lr *= LR_DECAY
                 if (i+1)%PLOT_ITERATIONS == 0:
-                    summarize(start_time, i, Y, f, g)
+                    summarize(start_time, i, Y, f, g, nnd_f, nnd_g)
     except KeyboardInterrupt:
         pass
     if (i+1)%PLOT_ITERATIONS != 0:
-        summarize(start_time, i, Y, f, g)
+        summarize(start_time, i, Y, f, g, nnd_f, nnd_g)
     #print(f)
 
 def nn_distance_stats(nnd, map_):
@@ -120,6 +120,10 @@ def A(i, x, x_):
     sigma_A = SIGMA_A*anneal(i)
     return np.exp(-(x - x_)**2/(2*sigma_A**2))
 
+def A_outer(i, x, x_):
+    sigma_A = SIGMA_A*anneal(i)
+    return np.exp(-np.subtract.outer(x, x_)**2/(2*sigma_A**2)).T
+
 def NN(y, y0):
     if y[0] == y0[0] and y[1] == y0[1]:
         return 1
@@ -151,10 +155,10 @@ def dg_Y(lr, i, X, g, Y, ng_X):
     Y = Y/(K-1)
     ng_X = ng_X/(K-1)
 
-    Ap = (X[:, np.newaxis] - g.reshape(-1))*A(i, X, g.reshape(-1))[:, np.newaxis]
-    B_ = B(i, Y, ng_X[:, np.newaxis, :])
+    Ap = np.subtract.outer(X, g.reshape(-1)).T*A_outer(i, X, g.reshape(-1))
+    B_ = B(i, Y, ng_X[:, np.newaxis, :]).T
     dg_X_Y = Ap * B_
-    return lr * np.sum(dg_X_Y, axis=0).reshape(g.shape)
+    return lr * np.sum(dg_X_Y, axis=1).reshape(g.shape)
 
 def plot(i, Y, f, g, nnd_f, nnd_g):
     Y_EXP = np.expand_dims(Y, axis=1)
@@ -201,17 +205,17 @@ def plot(i, Y, f, g, nnd_f, nnd_g):
         path = path[:,1], path[:,0]
         ax.plot(*path, ".g-")
         index += 1
-    iterations = np.arange(nnd_f.shape[0])
-    nnd_f = np.array(nnd_f)
-    nnd_g = np.array(nnd_g)
-    ax = fig.add_subplot(rows, cols, index)
-    ax.set_xlabel("Iteration")
-    ax.set_ylabel("Distance")
-    ax.grid()
-    ax.errorbar(iterations, nnd_f[:, 0], nnd_f[:, 1], label="$\overbar{f_{min}(x)}$")
-    ax.errorbar(iterations, nnd_g[:, 0], nnd_g[:, 1], label="$\overbar{g_{min}(x)}$")
-    ax.legend()
-    index += 1
+#    iterations = np.arange(nnd_f.shape[0])
+#    nnd_f = np.array(nnd_f)
+#    nnd_g = np.array(nnd_g)
+#    ax = fig.add_subplot(rows, cols, index)
+#    ax.set_xlabel("Iteration")
+#    ax.set_ylabel("Distance")
+#    ax.grid()
+#    ax.errorbar(iterations, nnd_f[:, 0], nnd_f[:, 1], label="$\overbar{f_{min}(x)}$")
+#    ax.errorbar(iterations, nnd_g[:, 0], nnd_g[:, 1], label="$\overbar{g_{min}(x)}$")
+#    ax.legend()
+#    index += 1
     plt.show()
 
 
