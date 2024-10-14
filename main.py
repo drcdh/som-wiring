@@ -49,9 +49,7 @@ def main():
     start_time = time.time()
     lr = LR
     nnd_f, nnd_g = [], []
-    #nn_distance_stats(nnd_f, f)
-    #nn_distance_stats(nnd_g, g)
-    summarize(start_time, -1, Y, f, g, nnd_f, nnd_g)
+    #summarize(start_time, -1, Y, f, g, nnd_f, nnd_g)
     try:
         if g is None:
             for i in range(ITERATIONS):
@@ -60,6 +58,7 @@ def main():
                 print("f(x):  {:3d}, {:.3f} : {:.3f} +- ({:.6f} +- {:.6f})".format(i+1, lr, np.mean(np.abs(f)), np.mean(np.abs(df)), np.std(np.abs(df))))
                 f += df
                 lr *= LR_DECAY
+                f_nn_distance_stats(nnd_f, f)
                 if (i+1)%PLOT_ITERATIONS == 0:
                     summarize(start_time, i, Y, f, g, nnd_f, nnd_g)
         elif f is None:
@@ -69,6 +68,7 @@ def main():
                 print("g(y):  {:3d}, {:.3f} : {:.3f} +- ({:.6f} +- {:.6f})".format(i+1, lr, np.mean(np.abs(g)), np.mean(np.abs(dg)), np.std(np.abs(dg))))
                 g += dg
                 lr *= LR_DECAY
+                g_nn_distance_stats(nnd_g, g)
                 if (i+1)%PLOT_ITERATIONS == 0:
                     summarize(start_time, i, Y, f, g, nnd_f, nnd_g)
         else:
@@ -80,6 +80,8 @@ def main():
                 f += df
                 g += dg
                 lr *= LR_DECAY
+                f_nn_distance_stats(nnd_f, f)
+                g_nn_distance_stats(nnd_g, g)
                 if (i+1)%PLOT_ITERATIONS == 0:
                     summarize(start_time, i, Y, f, g, nnd_f, nnd_g)
     except KeyboardInterrupt:
@@ -88,14 +90,32 @@ def main():
         summarize(start_time, i, Y, f, g, nnd_f, nnd_g)
     #print(f)
 
-def nn_distance_stats(nnd, map_):
-    diff = np.subtract.outer(map_, map_)
-    # don't use inter-channel differences
-    dist = np.sqrt(diff[:, :, 0, :, :, 0]**2 + diff[:, :, 1, :, :, 1]**2)
-    dist = np.fill_diagonal(dist.reshape(K**D, K**2), np.inf).reshape(K, K, K, K)
-    min_dist = np.min(dist)
-    mean, std  = np.mean(dist), np.std(dist)
-    nnd.append([mean, std])
+#def nn_distance_stats(nnd, map_):
+#    diff = np.subtract.outer(map_, map_)
+#    # don't use inter-channel differences
+#    dist = np.sqrt(diff[:, :, 0, :, :, 0]**2 + diff[:, :, 1, :, :, 1]**2)
+#    dist = np.fill_diagonal(dist.reshape(K**D, K**2), np.inf).reshape(K, K, K, K)
+#    min_dist = np.min(dist)
+#    mean, std  = np.mean(dist), np.std(dist)
+#    nnd.append([mean, std])
+
+def f_nn_distance_stats(nnd, f):
+    min_d = []
+    for i, w in enumerate(f):
+        d = np.sqrt(np.sum((w - f)**2, axis=1))
+        d[i] = np.inf
+        min_d.append(np.min(d))
+    min_d = np.array(min_d)
+    nnd.append([np.mean(min_d), np.std(min_d)])
+
+def g_nn_distance_stats(nnd, g):
+    min_d = []
+    for i, w in enumerate(g):
+        d = np.abs(w - g)
+        d[i] = np.inf
+        min_d.append(np.min(d))
+    min_d = np.array(min_d)
+    nnd.append([np.mean(min_d), np.std(min_d)])
 
 def summarize(start_time, i, Y, f, g, nnd_f, nnd_g):
     end_time = time.time()
@@ -205,17 +225,24 @@ def plot(i, Y, f, g, nnd_f, nnd_g):
         path = path[:,1], path[:,0]
         ax.plot(*path, ".g-")
         index += 1
-#    iterations = np.arange(nnd_f.shape[0])
-#    nnd_f = np.array(nnd_f)
-#    nnd_g = np.array(nnd_g)
-#    ax = fig.add_subplot(rows, cols, index)
-#    ax.set_xlabel("Iteration")
-#    ax.set_ylabel("Distance")
-#    ax.grid()
-#    ax.errorbar(iterations, nnd_f[:, 0], nnd_f[:, 1], label="$\overbar{f_{min}(x)}$")
-#    ax.errorbar(iterations, nnd_g[:, 0], nnd_g[:, 1], label="$\overbar{g_{min}(x)}$")
-#    ax.legend()
-#    index += 1
+    ax = fig.add_subplot(rows, cols, index)
+    ax.set_xlabel("Iteration")
+    ax.set_ylabel("Distance")
+    ax.grid()
+    if nnd_f or nnd_g:
+        iterations = np.arange(len(nnd_f or nnd_g))
+        if nnd_f:
+            nnd_f = np.array(nnd_f)
+            ax.errorbar(iterations, nnd_f[:, 0], nnd_f[:, 1], label="$\\overline{f_{min}(x)}$")
+            ax.plot(iterations, [SIGMA_A*anneal(i) for i in iterations], label="$\\sigma_A$")
+            ax.hlines(1/K, 0, iterations[-1], linestyles="dashed", label=f"$1/K = 1/{K}$")
+        if nnd_g:
+            nnd_g = np.array(nnd_g)
+            ax.errorbar(iterations, nnd_g[:, 0], nnd_g[:, 1], label="$\\overline{g_{min}(y)}$")
+            ax.plot(iterations, [SIGMA_B*anneal(i) for i in iterations], label="$\\sigma_B$")
+            ax.hlines(1/K**2, 0, iterations[-1], linestyles="dashed", label=f"$1/K^2 = 1/{K**2}$")
+        ax.legend()
+    index += 1
     plt.show()
 
 
