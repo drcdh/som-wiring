@@ -1,6 +1,25 @@
 import math
 import numpy as np
 
+from initial import (
+    best_match_f as best_match_y,
+    best_match_g as best_match_x,
+    A,
+    B,
+    df_x,
+    dg_y,
+)
+
+from main import (
+    best_match_f as best_match_Y,
+    best_match_g as best_match_X,
+    A as A_vec,
+    A_outer as A_vec_outer,
+    B as B_vec,
+    B_outer as B_vec_outer,
+    df_X,
+    dg_Y,
+)
 
 SEED = 1959
 
@@ -11,90 +30,14 @@ C = D
 SIGMA_A = 0.2
 SIGMA_B = 0.2
 
-def best_match_Y(f, Y):
-    Y = Y/(K-1)  # map from [[0, K-1], [0, K-1]] to [[0, 1], [0, 1]]
-    return np.argmin(np.sum((f-Y)**2, axis=2), axis=1)
-
-def best_match_y(f, y):
-    y = y/(K-1)  # map from [[0, K-1], [0, K-1]] to [[0, 1], [0, 1]]
-    return np.argmin(np.sum((f-y)**2, axis=1))
-
-def best_match_X(g, X):
-    X = X/(K**D-1)  # map from [0, K**D-1] to [0, 1]
-    return np.array(np.unravel_index(np.argmin(np.abs(g.reshape(-1)-X[:, np.newaxis]), axis=1), g.shape)).T.reshape(K**D, C)
-
-def best_match_x(g, x):
-    x = x/(K**D-1)  # map from [0, K**D-1] to [0, 1]
-    return np.array(np.unravel_index(np.argmin(np.abs(g-x)), g.shape))
-
-def A_vec(_, x, x_):
-    return np.exp(-(x - x_)**2/(2*SIGMA_A**2))
-
-def A_vec_outer(_, x, x_):
-    return np.exp(-np.subtract.outer(x, x_)**2/(2*SIGMA_A**2)).T
-
-def B_vec(_, y, y_):
-    return np.exp(-np.sum((y - y_)**2, axis=-1)/(2*SIGMA_B**2))
-
-def A(_, x, x_):
-    return math.exp(-np.sum((x - x_)**2)/(2*SIGMA_A**2))
-
-def B(_, y, y_):
-    return math.exp(-np.sum((y - y_)**2)/(2*SIGMA_B**2))
-
-#####
-
-def df_x(lr, i, y, nf_y, f, x):
-    f_x = f[x]
-    y = y/(K-1)
-
-    x = x/(K**D-1)
-    nf_y = nf_y/(K**D-1)
-
-    Bp = (y - f_x)*B(i, y, f_x)
-    return lr * A(i, x, nf_y) * Bp
-
-def df_X(lr, i, Y, nf_Y, f, X):
-    Y = Y/(K-1)
-
-    X = X/(K**D-1)
-    nf_Y = nf_Y/(K**D-1)
-
-    A_ = A_vec(i, X, nf_Y[:, np.newaxis])  # A_[i, j] == A(X, nf_Y[i])[j]
-    Bp = (Y[:, np.newaxis] - f)*B_vec(i, Y[:, np.newaxis], f)[:, :, np.newaxis]  # Bp[i, j] == (Y[i] - f[j])*B(Y[i], f[j])
-    df_X_Y = A_[:, :, np.newaxis]*Bp
-    return lr * np.sum(df_X_Y, axis=0)
-
-def dg_y(lr, i, x, g, y, ng_x):
-    g_y = g[tuple(y)]
-    x = x/(K**D-1)
-
-    y = y/(K-1)
-    ng_x = ng_x/(K-1)
-
-    Ap = (x - g_y)*A(i, x, g_y)
-    dg_y_ = lr * Ap * B(i, y, ng_x)
-    return dg_y_
-
-def dg_Y(lr, i, X, g, Y, ng_X):
-    X = X/(K**D-1)
-
-    Y = Y/(K-1)
-    ng_X = ng_X/(K-1)
-
-    Ap = np.subtract.outer(X, g.reshape(-1)).T*A_vec_outer(i, X, g.reshape(-1))
-    B_ = B_vec(i, Y, ng_X[:, np.newaxis, :]).T
-    dg_X_Y = Ap * B_
-    return lr * np.sum(dg_X_Y, axis=1).reshape(g.shape)
 
 def test_nf_Y():
     f = np.random.rand(K**D, C)  # X->Y or line->square
     Y = np.array(np.meshgrid(*(D*(range(K),)))).T.reshape(-1, D)
-    Y_EXP = np.expand_dims(Y, axis=1)
     nf_Y = []
     for y in Y:
         nf_Y.append(best_match_y(f, y))
-    nf_Y_vec = best_match_Y(f, Y_EXP)
+    nf_Y_vec = best_match_Y(f, Y)
     assert np.allclose(nf_Y, nf_Y_vec)
 
 def test_nf_X():
@@ -111,7 +54,6 @@ def test_nf_X():
 def test_f_A():
     f = np.random.rand(K**D, C)  # X->Y or line->square
     Y = np.array(np.meshgrid(*(D*(range(K),)))).T.reshape(-1, D)
-    Y_EXP = np.expand_dims(Y, axis=1)
     X = np.arange(K**C)
     A_ = []
     for y in Y:
@@ -120,7 +62,7 @@ def test_f_A():
             A_.append(A(1, x, nf_y))
             #Ap_.append()
     A_ = np.array(A_).reshape(K**2, K**2)
-    nf_Y_vec = best_match_Y(f, Y_EXP)
+    nf_Y_vec = best_match_Y(f, Y)
     A_vec_ = A_vec(1, X, nf_Y_vec[:, np.newaxis])
     assert np.allclose(A_, A_vec_)
 
@@ -186,8 +128,8 @@ def df(f, Y):
             df[x] += df_x(1, 1, y, nf_y, f, x)
     return df
 
-def df_vec(f, Y, Y_EXP, X):
-    nf_Y = best_match_Y(f, Y_EXP)
+def df_vec(f, Y, X):
+    nf_Y = best_match_Y(f, Y)
     df = df_X(1, 1, Y, nf_Y, f, X)
     return df
 
@@ -207,10 +149,9 @@ def dg_vec(g, Y, X):
 def test_df():
     f = np.random.rand(K**D, C)  # X->Y or line->square
     Y = np.array(np.meshgrid(*(D*(range(K),)))).T.reshape(-1, D)
-    Y_EXP = np.expand_dims(Y, axis=1)
     X = np.arange(K**C)
     df_ = df(f, Y)
-    df_vec_ = df_vec(f, Y, Y_EXP, X)
+    df_vec_ = df_vec(f, Y, X)
     assert np.allclose(df_, df_vec_)
 
 def test_dg():

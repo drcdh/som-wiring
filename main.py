@@ -150,14 +150,25 @@ def B(i, y, y_):
     sigma_B = SIGMA_B*anneal(i)
     return np.exp(-np.sum((y - y_)**2, axis=-1)/(2*sigma_B**2))
 
+def B_outer(i, y, y_):
+    sigma_B = SIGMA_B*anneal(i)
+    diff = np.diagonal(np.subtract.outer(y, y_), axis1=1, axis2=3)
+    return np.exp(-np.sum(diff**2, axis=-1)/(2*sigma_B**2))
+
 def df_X(lr, i, Y, nf_Y, f, X):
     Y = Y/(K-1)
 
     X = X/(K**D-1)
     nf_Y = nf_Y/(K**D-1)
 
-    A_ = A(i, X, nf_Y[:, np.newaxis])  # A_[i, j] == A(X, nf_Y[i])[j]
-    Bp = (Y[:, np.newaxis] - f)*B(i, Y[:, np.newaxis], f)[:, :, np.newaxis]  # Bp[i, j] == (Y[i] - f[j])*B(Y[i], f[j])
+    A_ = A_outer(i, X, nf_Y.reshape(-1))  # A_[i, j] == A(X, nf_Y[i])[j]
+    # A_[i, :] is Gaussian, centered at (K**2-1)*nf_Y.reshape(-1)[i]
+    # plt.plot(A_[100, :]); plt.vlines(nf_Y.reshape(-1)[100]*(K**2-1), 0, 1); plt.show()
+    Ymf = np.diagonal(np.subtract.outer(Y, f), axis1=1, axis2=3)
+    B_ = B_outer(i, Y, f)
+    # B_[:, x] is a 2D Gaussian, centered at f[x]
+    # plt.imshow(B_[:, 100].reshape(K, K)); plt.show()
+    Bp = Ymf*np.expand_dims(B_, axis=-1)
     df_X_Y = A_[:, :, np.newaxis]*Bp
     return lr * np.sum(df_X_Y, axis=0)
 
@@ -232,10 +243,10 @@ def plot_f_wstats(ax, wstats):
     iterations = np.arange(len(wstats))
     wstats = np.array(wstats)
     ax.grid()
-    ax.plot(iterations, wstats[:, 0], label="Median inter-node distance")
-    ax.plot(iterations, wstats[:, 1], label="Min inter-node distance")
-    ax.plot(iterations, wstats[:, 2], label="Max inter-node distance")
     ax.plot(iterations, [SIGMA_A*anneal(i) for i in iterations], label="$\\sigma_A$")
+    ax.plot(iterations, wstats[:, 2], label="Max inter-node closest distance")
+    ax.plot(iterations, wstats[:, 0], label="Median inter-node closest distance")
+    ax.plot(iterations, wstats[:, 1], label="Min inter-node closest distance")
     ax.hlines(1/K, 0, iterations[-1], linestyles="dashed", label=f"$1/K = 1/{K}$")
     ax.legend()
 
@@ -249,6 +260,7 @@ def plot_g_3d(ax, g):
 
 def plot_g_path(ax, g):
     X = np.arange(K**2)
+    ax.set_aspect("equal")
     ax.set_xlabel("$y_0$")
     ax.set_ylabel("$y_1$")
     ax.grid()
@@ -260,11 +272,12 @@ def plot_g_wstats(ax, wstats):
     iterations = np.arange(len(wstats))
     wstats = np.array(wstats)
     ax.grid()
-    ax.plot(iterations, wstats[:, 0], label="Median inter-node distance")
-    ax.plot(iterations, wstats[:, 1], label="Min inter-node distance")
-    ax.plot(iterations, wstats[:, 2], label="Max inter-node distance")
     ax.plot(iterations, [SIGMA_B*anneal(i) for i in iterations], label="$\\sigma_B$")
+    ax.plot(iterations, wstats[:, 2], label="Max inter-node closest distance")
+    ax.plot(iterations, wstats[:, 0], label="Median inter-node closest distance")
+    ax.plot(iterations, wstats[:, 1], label="Min inter-node closest distance")
     ax.hlines(1/K**2, 0, iterations[-1], linestyles="dashed", label=f"$1/K^2 = 1/{K**2}$")
+    ax.set_yscale("log")
     ax.legend()
 
 
