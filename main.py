@@ -15,7 +15,7 @@ import time
 from matplotlib import cm
 
 
-SEED = 1959
+SEED = 12
 
 D = 2
 K = 15
@@ -25,11 +25,13 @@ SIGMA_A = 0.2
 SIGMA_B = 0.2
 
 ANNEAL_N = 1
-ANNEAL_D = 100
-ANNEAL_SMOOTH = True
+ANNEAL_D = 1000
+ANNEAL_SMOOTH = False
 
-LR = 0.1
+LR = 0.01
 LR_DECAY = 1.0
+
+BATCH_SIZE = None
 
 ITERATIONS = 1000
 PLOT_ITERATIONS = 250
@@ -40,7 +42,7 @@ def main():
     f, g = None, None
 
     f = np.random.rand(K**D, C)  # X->Y or line->square
-    #g = np.random.rand(K, K)  # Y->X or square->line
+    g = np.random.rand(K, K)  # Y->X or square->line
 
     Y = np.array(np.meshgrid(*(D*(range(K),)))).T.reshape(-1, D)
     X = np.arange(K**C)
@@ -52,32 +54,35 @@ def main():
     try:
         if g is None:
             for i in range(ITERATIONS):
-                nf_Y = best_match_f(f, Y)
-                df = df_X(lr, i, Y, nf_Y, f, X)
-                print("f(x):  {:3d}, {:.3f} : {:.3f} +- ({:.6f} +- {:.6f})".format(i+1, lr, np.mean(np.abs(f)), np.mean(np.abs(df)), np.std(np.abs(df))))
-                f += df
+                for ((Y_batch,),) in batches(Y):
+                    nf_Y = best_match_f(f, Y_batch)
+                    df = df_X(lr, i, Y_batch, nf_Y, f, X)
+                    print("f(x):  {:3d}, {:.3f} : {:.3f} +- ({:.6f} +- {:.6f})".format(i+1, lr, np.mean(np.abs(f)), np.mean(np.abs(df)), np.std(np.abs(df))))
+                    f += df
                 lr *= LR_DECAY
                 f_nn_distance_stats(nnd_f, f)
                 if (i+1)%PLOT_ITERATIONS == 0:
                     summarize(start_time, i, Y, f, g, nnd_f, nnd_g)
         elif f is None:
             for i in range(ITERATIONS):
-                ng_X = best_match_g(g, X)
-                dg = dg_Y(lr, i, X, g, Y, ng_X)
-                print("g(y):  {:3d}, {:.3f} : {:.3f} +- ({:.6f} +- {:.6f})".format(i+1, lr, np.mean(np.abs(g)), np.mean(np.abs(dg)), np.std(np.abs(dg))))
-                g += dg
+                for ((X_batch,),) in batches(X):
+                    ng_X = best_match_g(g, X_batch)
+                    dg = dg_Y(lr, i, X_batch, g, Y, ng_X)
+                    print("g(y):  {:3d}, {:.3f} : {:.3f} +- ({:.6f} +- {:.6f})".format(i+1, lr, np.mean(np.abs(g)), np.mean(np.abs(dg)), np.std(np.abs(dg))))
+                    g += dg
                 lr *= LR_DECAY
                 g_nn_distance_stats(nnd_g, g)
                 if (i+1)%PLOT_ITERATIONS == 0:
                     summarize(start_time, i, Y, f, g, nnd_f, nnd_g)
         else:
             for i in range(ITERATIONS):
-                df = df_X(lr, i, Y, g*(K**D-1), f, X)
-                dg = dg_Y(lr, i, X, g, Y, f*(K-1))
-                print("f(x):  {:3d}, {:.3f} : {:.3f} +- ({:.6f} +- {:.6f})".format(i+1, lr, np.mean(np.abs(f)), np.mean(np.abs(df)), np.std(np.abs(df))))
-                print("g(y):  {:3d}, {:.3f} : {:.3f} +- ({:.6f} +- {:.6f})".format(i+1, lr, np.mean(np.abs(g)), np.mean(np.abs(dg)), np.std(np.abs(dg))))
-                f += df
-                g += dg
+                for (Y_batch,), (X_batch,) in batches(Y, X):
+                    df = df_X(lr, i, Y_batch, g[tuple(Y_batch.T)].reshape(-1)*(K**D-1), f, X)
+                    dg = dg_Y(lr, i, X_batch, g, Y, f[X_batch]*(K-1))
+                    print("f(x):  {:3d}, {:.3f} : {:.3f} +- ({:.6f} +- {:.6f})".format(i+1, lr, np.mean(np.abs(f)), np.mean(np.abs(df)), np.std(np.abs(df))))
+                    print("g(y):  {:3d}, {:.3f} : {:.3f} +- ({:.6f} +- {:.6f})".format(i+1, lr, np.mean(np.abs(g)), np.mean(np.abs(dg)), np.std(np.abs(dg))))
+                    f += df
+                    g += dg
                 lr *= LR_DECAY
                 f_nn_distance_stats(nnd_f, f)
                 g_nn_distance_stats(nnd_g, g)
@@ -87,6 +92,22 @@ def main():
         pass
     if (i+1)%PLOT_ITERATIONS != 0:
         summarize(start_time, i, Y, f, g, nnd_f, nnd_g)
+
+def batches(*args):
+    if BATCH_SIZE is None:
+        yield args
+        return
+    L = args[0].shape[0]
+    for arg in args:
+        assert arg.shape[0] == L
+    S = np.arange(L)
+    np.random.shuffle(S)
+    start, end = 0, BATCH_SIZE
+    while start < L:
+        s = S[start:end]
+        yield tuple((arg[s],) for arg in args)
+        start += BATCH_SIZE
+        end += BATCH_SIZE
 
 def f_nn_distance_stats(nnd, f):
     min_d = []
@@ -120,7 +141,7 @@ def best_match_f(f, Y):
 
 def best_match_g(g, X):
     X = X/(K**D-1)  # map from [0, K**D-1] to [0, 1]
-    return np.array(np.unravel_index(np.argmin(np.abs(g.reshape(-1)-X[:, np.newaxis]), axis=1), g.shape)).T.reshape(K**D, C)
+    return np.array(np.unravel_index(np.argmin(np.abs(g.reshape(-1)-X[:, np.newaxis]), axis=1), g.shape)).T.reshape(len(X), C)
 
 
 def anneal(i):
@@ -163,11 +184,12 @@ def df_X(lr, i, Y, nf_Y, f, X):
 
     A_ = A_outer(i, X, nf_Y.reshape(-1))  # A_[i, j] == A(X, nf_Y[i])[j]
     # A_[i, :] is Gaussian, centered at (K**2-1)*nf_Y.reshape(-1)[i]
-    Ymf = np.diagonal(np.subtract.outer(Y, f), axis1=1, axis2=3)
+    #Ymf = np.diagonal(np.subtract.outer(Y, f[X]), axis1=1, axis2=3)
+    Ymf = Y[:, np.newaxis] - f
     B_ = B_outer(i, Y, f)
     # B_[:, x] is a 2D Gaussian, centered at f[x]
     Bp = Ymf*np.expand_dims(B_, axis=-1)
-    df_X_Y = A_[:, :, np.newaxis]*Bp
+    df_X_Y = np.expand_dims(A_, axis=-1)*Bp
     df_X = np.sum(df_X_Y, axis=0)
     if False:#i > 250:
         j = 100
