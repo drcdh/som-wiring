@@ -15,7 +15,7 @@ import time
 from matplotlib import cm
 
 
-SEED = 1959
+SEED = 12
 
 D = 2
 K = 15
@@ -24,15 +24,16 @@ C = D
 SIGMA_A = 0.2
 SIGMA_B = 0.2
 
+ANNEAL_DELAY = 800
 ANNEAL_N = 1
-ANNEAL_D = 100
+ANNEAL_D = 50
 ANNEAL_SMOOTH = True
 
-LR = 0.1
+LR = 0.01
 LR_DECAY = 1.0
 
-ITERATIONS = 1000
-PLOT_ITERATIONS = 250
+ITERATIONS = 5000
+PLOT_ITERATIONS = 1000
 
 def main():
     np.random.seed(SEED)
@@ -40,7 +41,7 @@ def main():
     f, g = None, None
 
     f = np.random.rand(K**D, C)  # X->Y or line->square
-    #g = np.random.rand(K, K)  # Y->X or square->line
+    g = np.random.rand(K, K)  # Y->X or square->line
 
     Y = np.array(np.meshgrid(*(D*(range(K),)))).T.reshape(-1, D)
     X = np.arange(K**C)
@@ -73,7 +74,7 @@ def main():
         else:
             for i in range(ITERATIONS):
                 df = df_X(lr, i, Y, g*(K**D-1), f, X)
-                dg = dg_Y(lr, i, X, g, Y, f*(K-1))
+                dg = dg_Y(lr if i < 1000 else lr*.1, i, X, g, Y, f*(K-1))
                 print("f(x):  {:3d}, {:.3f} : {:.3f} +- ({:.6f} +- {:.6f})".format(i+1, lr, np.mean(np.abs(f)), np.mean(np.abs(df)), np.std(np.abs(df))))
                 print("g(y):  {:3d}, {:.3f} : {:.3f} +- ({:.6f} +- {:.6f})".format(i+1, lr, np.mean(np.abs(g)), np.mean(np.abs(dg)), np.std(np.abs(dg))))
                 f += df
@@ -123,17 +124,25 @@ def best_match_g(g, X):
     return np.array(np.unravel_index(np.argmin(np.abs(g.reshape(-1)-X[:, np.newaxis]), axis=1), g.shape)).T.reshape(K**D, C)
 
 
-def anneal(i):
-    if ANNEAL_SMOOTH:
-        return 1.0/(1.0 + ANNEAL_N*(i/ANNEAL_D))
-    return 1.0/(1.0 + ANNEAL_N*(i//ANNEAL_D))
+#def anneal(i):
+#    if ANNEAL_SMOOTH:
+#        return 1.0/(1.0 + ANNEAL_N*(max(0, i - ANNEAL_DELAY)/ANNEAL_D))
+#    return 1.0/(1.0 + ANNEAL_N*(max(0, i - ANNEAL_DELAY)//ANNEAL_D))
+
+def anneal_A(i):
+    unit = 1.0/K**2
+    return max(unit, SIGMA_A - unit*(max(0, i - ANNEAL_DELAY)//ANNEAL_D))
+
+def anneal_B(i):
+    unit = 1.0/K
+    return max(unit, SIGMA_B - unit*(max(0, i - ANNEAL_DELAY)//ANNEAL_D))
 
 def A(i, x, x_):
-    sigma_A = SIGMA_A*anneal(i)
+    sigma_A = anneal_A(i)
     return np.exp(-(x - x_)**2/(2*sigma_A**2))
 
 def A_outer(i, x, x_):
-    sigma_A = SIGMA_A*anneal(i)
+    sigma_A = anneal_A(i)
     return np.exp(-np.subtract.outer(x, x_)**2/(2*sigma_A**2)).T
 
 def NN(y, y0):
@@ -147,11 +156,11 @@ def NN(y, y0):
 
 def B(i, y, y_):
     #return 1  # Normal Kohonen
-    sigma_B = SIGMA_B*anneal(i)
+    sigma_B = anneal_B(i)
     return np.exp(-np.sum((y - y_)**2, axis=-1)/(2*sigma_B**2))
 
 def B_outer(i, y, y_):
-    sigma_B = SIGMA_B*anneal(i)
+    sigma_B = anneal_B(i)
     diff = np.diagonal(np.subtract.outer(y, y_), axis1=1, axis2=3)
     return np.exp(-np.sum(diff**2, axis=-1)/(2*sigma_B**2))
 
@@ -258,7 +267,7 @@ def plot_f_wstats(ax, wstats):
     iterations = np.arange(len(wstats))
     wstats = np.array(wstats)
     ax.grid()
-    ax.plot(iterations, [SIGMA_A*anneal(i) for i in iterations], label="$\\sigma_A$")
+    ax.plot(iterations, [anneal_A(i) for i in iterations], label="$\\sigma_A$")
     ax.plot(iterations, wstats[:, 2], label="Max inter-node closest distance")
     ax.plot(iterations, wstats[:, 0], label="Median inter-node closest distance")
     ax.plot(iterations, wstats[:, 1], label="Min inter-node closest distance")
@@ -288,7 +297,7 @@ def plot_g_wstats(ax, wstats):
     iterations = np.arange(len(wstats))
     wstats = np.array(wstats)
     ax.grid()
-    ax.plot(iterations, [SIGMA_B*anneal(i) for i in iterations], label="$\\sigma_B$")
+    ax.plot(iterations, [anneal_B(i) for i in iterations], label="$\\sigma_B$")
     ax.plot(iterations, wstats[:, 2], label="Max inter-node closest distance")
     ax.plot(iterations, wstats[:, 0], label="Median inter-node closest distance")
     ax.plot(iterations, wstats[:, 1], label="Min inter-node closest distance")
