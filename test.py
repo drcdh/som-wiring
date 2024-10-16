@@ -129,7 +129,7 @@ def df(f, Y, g=None):
             nf_y = g[tuple(y)]*(K**D-1)
         for x in range(K**C):  # Assumes map is on a line
             df[x] += df_x(1, 1, y, nf_y, f, x)
-    return df
+    return df/np.mean(df)
 
 def df_vec(f, Y, X, g=None):
     nf_Y = best_match_Y(f, Y)
@@ -137,7 +137,7 @@ def df_vec(f, Y, X, g=None):
         assert g.reshape(-1).shape == nf_Y.shape
         nf_Y = g.reshape(-1)*(K**D-1)
     df = df_X(1, 1, Y, nf_Y, f, X)
-    return df
+    return df/np.mean(df)
 
 def dg(g, Y, f=None):
     dg = np.zeros_like(g)
@@ -148,14 +148,14 @@ def dg(g, Y, f=None):
             ng_x = f[x]*(K-1)
         for y in Y:
             dg[tuple(y)] += dg_y(1, 1, x, g, y, ng_x)
-    return dg
+    return dg/np.mean(dg)
 
 def dg_vec(g, Y, X, f=None):
     ng_X = best_match_X(g, X)
     if f is not None:
         assert ng_X.shape == f.shape
     dg = dg_Y(1, 1, X, g, Y, ng_X if f is None else f*(K-1))
-    return dg
+    return dg/np.mean(dg)
 
 def test_df():
     f = np.random.rand(K**D, C)  # X->Y or line->square
