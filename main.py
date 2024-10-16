@@ -163,14 +163,20 @@ def df_X(lr, i, Y, nf_Y, f, X):
 
     A_ = A_outer(i, X, nf_Y.reshape(-1))  # A_[i, j] == A(X, nf_Y[i])[j]
     # A_[i, :] is Gaussian, centered at (K**2-1)*nf_Y.reshape(-1)[i]
-    # plt.plot(A_[100, :]); plt.vlines(nf_Y.reshape(-1)[100]*(K**2-1), 0, 1); plt.show()
     Ymf = np.diagonal(np.subtract.outer(Y, f), axis1=1, axis2=3)
     B_ = B_outer(i, Y, f)
     # B_[:, x] is a 2D Gaussian, centered at f[x]
-    # plt.imshow(B_[:, 100].reshape(K, K)); plt.show()
     Bp = Ymf*np.expand_dims(B_, axis=-1)
     df_X_Y = A_[:, :, np.newaxis]*Bp
-    return lr * np.sum(df_X_Y, axis=0)
+    df_X = np.sum(df_X_Y, axis=0)
+    if False:#i > 250:
+        j = 100
+        plt.plot(A_[j, :], label=f"A({j})"); plt.vlines(nf_Y.reshape(-1)[j]*(K**2-1), 0, 1); plt.legend(); plt.show()
+        plt.imshow(B_[:, j].reshape(K, K)); plt.title(f"B({j})"); plt.show()
+        plt.plot(Bp[:, j, 0].reshape(K, K)[:, K//2], label=f"B'({j}, c=0)"); plt.legend(); plt.show()
+        print(df_X_Y.shape); plt.plot(df_X_Y[:, j, 0], label=f"df_X_Y({j}, c=0)"); plt.plot(df_X_Y[:, j, 1]); plt.legend(); plt.show()
+        print(df_X.shape); plt.plot(df_X[:, 0], label="df"); plt.plot(df_X[:, 1]); plt.legend(); plt.show()
+    return lr * df_X
 
 def dg_Y(lr, i, X, g, Y, ng_X):
     X = X/(K**D-1)
@@ -178,10 +184,19 @@ def dg_Y(lr, i, X, g, Y, ng_X):
     Y = Y/(K-1)
     ng_X = ng_X/(K-1)
 
-    Ap = np.subtract.outer(X, g.reshape(-1)).T*A_outer(i, X, g.reshape(-1))
+    A_ = A_outer(i, X, g.reshape(-1))
+    Ap = np.subtract.outer(X, g.reshape(-1)).T*A_
     B_ = B(i, Y, ng_X[:, np.newaxis, :]).T
     dg_X_Y = Ap * B_
-    return lr * np.sum(dg_X_Y, axis=1).reshape(g.shape)
+    dg_Y = np.sum(dg_X_Y, axis=1).reshape(g.shape)
+    if False:#i > 250:
+        j = 100
+        plt.plot(A_[j, :], label=f"A({j})"); plt.legend(); plt.show()
+        plt.plot(Ap[j, :], label=f"A'({j})"); plt.legend(); plt.show()
+        plt.imshow(B_[:, j].reshape(K, K)); plt.title(f"B({j})"); plt.show()
+        print(dg_X_Y.shape); plt.imshow(dg_X_Y[:, j].reshape(K, K)); plt.colorbar(); plt.title(f"df_X_Y({j})"); plt.show()
+        print(dg_Y.shape); plt.imshow(dg_Y[:, :]); plt.colorbar(); plt.title("dg"); plt.show()
+    return lr * dg_Y
 
 def plot(i, Y, f, g, nnd_f, nnd_g):
     PLOT_F = f is not None
@@ -236,8 +251,8 @@ def plot_f_path(ax, f, Y):
     ax.grid()
     path = Y[np.argsort(best_match_f(f, Y))]
     path = path[:,0], path[:,1]
-    ax.plot(*path, ".r-")
-    ax.scatter(f[:,0]*(K-1), f[:,1]*(K-1), c="b", marker="o")
+    ax.plot(*path, ".r-", alpha=0.8)
+    ax.scatter(f[:,0]*(K-1), f[:,1]*(K-1), c="b", marker="o", alpha=0.8)
 
 def plot_f_wstats(ax, wstats):
     iterations = np.arange(len(wstats))
@@ -248,6 +263,7 @@ def plot_f_wstats(ax, wstats):
     ax.plot(iterations, wstats[:, 0], label="Median inter-node closest distance")
     ax.plot(iterations, wstats[:, 1], label="Min inter-node closest distance")
     ax.hlines(1/K, 0, iterations[-1], linestyles="dashed", label=f"$1/K = 1/{K}$")
+    ax.set_yscale("log")
     ax.legend()
 
 def plot_g_3d(ax, g):
