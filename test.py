@@ -120,30 +120,41 @@ def test_g_B():
 
 #####
 
-def df(f, Y):
+def df(f, Y, g=None):
     df = np.zeros_like(f)
     for y in Y:
         nf_y = best_match_y(f, y)
+        if g is not None:
+            assert g[tuple(y)].shape == nf_y.shape
+            nf_y = g[tuple(y)]*(K**D-1)
         for x in range(K**C):  # Assumes map is on a line
             df[x] += df_x(1, 1, y, nf_y, f, x)
     return df
 
-def df_vec(f, Y, X):
+def df_vec(f, Y, X, g=None):
     nf_Y = best_match_Y(f, Y)
+    if g is not None:
+        assert g.reshape(-1).shape == nf_Y.shape
+        nf_Y = g.reshape(-1)*(K**D-1)
     df = df_X(1, 1, Y, nf_Y, f, X)
     return df
 
-def dg(g, Y):
+def dg(g, Y, f=None):
     dg = np.zeros_like(g)
     for x in range(K**C):
         ng_x = best_match_x(g, x)
+        if f is not None:
+            assert ng_x.shape == f[x].shape
+            ng_x = f[x]*(K-1)
         for y in Y:
             dg[tuple(y)] += dg_y(1, 1, x, g, y, ng_x)
     return dg
 
-def dg_vec(g, Y, X):
+def dg_vec(g, Y, X, f=None):
     ng_X = best_match_X(g, X)
-    dg = dg_Y(1, 1, X, g, Y, ng_X)
+    if f is not None:
+        assert ng_X.shape == f.shape
+    dg = dg_Y(1, 1, X, g, Y, ng_X if f is None else f*(K-1))
     return dg
 
 def test_df():
@@ -160,4 +171,16 @@ def test_dg():
     X = np.arange(K**C)
     dg_ = dg(g, Y)
     dg_vec_ = dg_vec(g, Y, X)
+    assert np.allclose(dg_, dg_vec_)
+
+def test_df_dg():
+    f = np.random.rand(K**D, C)  # X->Y or line->square
+    g = np.random.rand(K, K)  # Y->X or square->line
+    Y = np.array(np.meshgrid(*(D*(range(K),)))).T.reshape(-1, D)
+    X = np.arange(K**C)
+    df_ = df(f, Y, g)
+    df_vec_ = df_vec(f, Y, X, g)
+    assert np.allclose(df_, df_vec_)
+    dg_ = dg(g, Y, f)
+    dg_vec_ = dg_vec(g, Y, X, f)
     assert np.allclose(dg_, dg_vec_)
